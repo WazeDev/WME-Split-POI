@@ -158,39 +158,43 @@
     }
 
     function WMESP_newSelectionAvailable() {
-        if (W.selectionManager.getSelectedDataModelObjects().length !== 1) return;
+        try {
+            if (W.selectionManager.getSelectedDataModelObjects().length !== 1) return;
 
-        const selectedObject = W.selectionManager.getSelectedDataModelObjects()[0];
-        if (selectedObject.type !== 'venue') return;
+            const selectedObject = W.selectionManager.getSelectedDataModelObjects()[0];
+            if (selectedObject.type !== 'venue') return;
 
-        const attributes = selectedObject.attributes;
+            const attributes = selectedObject.attributes;
 
-        if (!attributes.geometry.hasOwnProperty('components')) return;
+            if (!attributes.geometry.hasOwnProperty('components')) return;
 
-        const landmarkPoi = '(NATURAL_FEATURES|ISLAND|SEA_LAKE_POOL|RIVER_STREAM|FOREST_GROVE|FARM|CANAL|SWAMP_MARSH|DAM|PARK)';
-        if (new RegExp(landmarkPoi).test(attributes.categories) === false) return;
+            const landmarkPoi = '(NATURAL_FEATURES|ISLAND|SEA_LAKE_POOL|RIVER_STREAM|FOREST_GROVE|FARM|CANAL|SWAMP_MARSH|DAM|PARK)';
+            if (new RegExp(landmarkPoi).test(attributes.categories) === false) return;
 
-        log('selectionManager', W.selectionManager);
+            log('selectionManager', W.selectionManager);
 
-        const editPanel = getId('edit-panel');
-        if (editPanel.firstElementChild.style.display === 'none') {
-            window.setTimeout(WMESP_newSelectionAvailable, 100);
-        }
+            const editPanel = getId('edit-panel');
+            if (editPanel.firstElementChild.style.display === 'none') {
+                window.setTimeout(WMESP_newSelectionAvailable, 100);
+            }
 
-        // ok: 1 selected item and pannel is shown
+            // ok: 1 selected item and pannel is shown
 
-        // On verifie que le segment est éditable
-        if (!objIsEditable(selectedObject)) return;
+            // On verifie que le segment est éditable
+            if (!objIsEditable(selectedObject)) return;
 
-        if (selectedObject.type === 'venue') {
-            const btnHandle = getElementsByClassName('external-providers-control')[0];
-            const WMESP_Controle = document.createElement('wz-button');
-            WMESP_Controle.color = 'secondary';
-            WMESP_Controle.size = 'sm';
-            WMESP_Controle.className = 'geometry-type-control-button geometry-type-control-point';
-            WMESP_Controle.innerHTML = '<i class="fa fa-cut" style="font-size:24px;" title="Split POI"></i>';
-            $(btnHandle).before(WMESP_Controle, btnHandle);
-            WMESP_Controle.onclick = SplitPOI;
+            if (selectedObject.type === 'venue') {
+                const btnHandle = getElementsByClassName('external-providers-control')[0];
+                const WMESP_Controle = document.createElement('wz-button');
+                WMESP_Controle.color = 'secondary';
+                WMESP_Controle.size = 'sm';
+                WMESP_Controle.className = 'geometry-type-control-button geometry-type-control-point';
+                WMESP_Controle.innerHTML = '<i class="fa fa-cut" style="font-size:24px;" title="Split POI"></i>';
+                $(btnHandle).before(WMESP_Controle, btnHandle);
+                WMESP_Controle.onclick = SplitPOI;
+            }
+        } catch (ex) {
+            console.error('Split POI:', ex);
         }
     }
 
