@@ -183,13 +183,13 @@
         if (!objIsEditable(selectedObject)) return;
 
         if (selectedObject.type === 'venue') {
-            const btnHandle = getElementsByClassName('geometry-type-control-buttons')[0];
+            const btnHandle = getElementsByClassName('external-providers-control')[0];
             const WMESP_Controle = document.createElement('wz-button');
             WMESP_Controle.color = 'secondary';
             WMESP_Controle.size = 'sm';
             WMESP_Controle.className = 'geometry-type-control-button geometry-type-control-point';
             WMESP_Controle.innerHTML = '<i class="fa fa-cut" style="font-size:24px;" title="Split POI"></i>';
-            btnHandle.insertBefore(WMESP_Controle, btnHandle.nextSibling);
+            $(btnHandle).before(WMESP_Controle, btnHandle);
             WMESP_Controle.onclick = SplitPOI;
         }
     }
