@@ -162,14 +162,10 @@
             if (W.selectionManager.getSelectedDataModelObjects().length !== 1) return;
 
             const selectedObject = W.selectionManager.getSelectedDataModelObjects()[0];
-            if (selectedObject.type !== 'venue') return;
+            if (selectedObject.type !== 'venue' || selectedObject.isPoint()) return;
 
-            const attributes = selectedObject.attributes;
-
-            if (!attributes.geometry.hasOwnProperty('components')) return;
-
-            const landmarkPoi = '(NATURAL_FEATURES|ISLAND|SEA_LAKE_POOL|RIVER_STREAM|FOREST_GROVE|FARM|CANAL|SWAMP_MARSH|DAM|PARK)';
-            if (new RegExp(landmarkPoi).test(attributes.categories) === false) return;
+            // const landmarkPoi = '(NATURAL_FEATURES|ISLAND|SEA_LAKE_POOL|RIVER_STREAM|FOREST_GROVE|FARM|CANAL|SWAMP_MARSH|DAM|PARK)';
+            // if (new RegExp(landmarkPoi).test(attributes.categories) === false) return;
 
             log('selectionManager', W.selectionManager);
 
