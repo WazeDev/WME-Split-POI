@@ -179,76 +179,85 @@
         return true;
     }
 
-    function onSplitPoiButtonClick() {
+    // This will return null if more than one object is selected
+    function getSingleSelectedObject() {
         const selectedObjects = W.selectionManager.getSelectedDataModelObjects();
-        if (selectedObjects.length !== 1) return;
-        const poi = selectedObjects[0];
-        if (poi.type !== 'venue') return;
+        if (selectedObjects.length > 1) return null;
+        return selectedObjects[0];
+    }
 
+    function isObjectAnAreaPlace(object) {
+        return object?.type === 'venue' && !object.isPoint();
+    }
+
+    function getNewestOnScreenSegment() {
+        const newSegs = W.model.segments.getObjectArray(seg => seg.isNew());
+        let newestSeg = newSegs[0];
+        newSegs.forEach(seg => {
+            if (seg.getID() < newestSeg.getID() && onScreen(seg)) newestSeg = seg;
+        });
+        return newestSeg;
+    }
+
+    function getPoiAndSegIntersectionPoints(poi, seg) {
         const poiAttr = poi.attributes;
+        const poiGeo = poiAttr.geometry.clone();
+        const poiLineString = poiGeo.components[0].clone();
+        const segLineString = seg.attributes.geometry.clone();
 
-        if (!poiAttr.geometry.components[0].hasOwnProperty('components')) return;
+        const intersectPoint = [];
+        const poiLine = new OpenLayers.Geometry.LinearRing();
+        const segLine = new OpenLayers.Geometry.LinearRing();
 
-        // const poiPoints = [];
-        // const segPoints = [];
+        // Calcul des point d'intersection seg // poi
+        for (let n = 0; n < poiLineString.components.length - 1; n++) {
+            poiLine.components[0] = poiLineString.components[n].clone();
+            poiLine.components[1] = poiLineString.components[n + 1].clone();
 
-        log('poi', poi);
-        log('poiAttr', poiAttr);
-        let segLineString;
-        // eslint-disable-next-line no-restricted-syntax, guard-for-in
-        for (const seg in W.model.segments.objects) {
-            const segment = typeof (W.model.segments.getObjectById) === 'function' ? W.model.segments.getObjectById(seg) : W.model.segments.get(seg);
-            const segAttr = segment.attributes;
-            if (segAttr.primaryStreetID == null) {
-                if (onScreen(segment)) {
-                    segLineString = segAttr.geometry.clone();
+            for (let m = 0; m < segLineString.components.length - 1; m++) {
+                segLine.components[0] = segLineString.components[m].clone();
+                segLine.components[1] = segLineString.components[m + 1].clone();
+                if (poiLine.intersects(segLine)) {
+                    intersectPoint.push({ index: n, intersect: intersection(poiLine, segLine) });
                 }
+                segLine.removeComponent(0);
+                segLine.removeComponent(1);
             }
+            poiLine.removeComponent(0);
+            poiLine.removeComponent(1);
         }
-        if (typeof segLineString === 'undefined') {
+
+        return intersectPoint;
+    }
+
+    function onSplitPoiButtonClick() {
+        const poi = getSingleSelectedObject();
+        if (!isObjectAnAreaPlace(poi)) return;
+
+        const seg = getNewestOnScreenSegment();
+        if (!seg) {
             WazeWrap.Alerts.error('WME Split POI', 'Create a new road segment through the area place first.');
             return;
         }
 
-        let poiGeo = poiAttr.geometry.clone();
-        const oldPoiGeo = poiAttr.geometry.clone();
-        const poiLineString = poiGeo.components[0].clone();
+        const oldPoiGeo = poi.attributes.geometry.clone();
+        const poiLineString = poi.attributes.geometry.components[0].clone();
 
-        const poiLine = new OpenLayers.Geometry.LinearRing();
-        const segLine = new OpenLayers.Geometry.LinearRing();
-
-        const intersectPoint = [];
+        const intersectPoints = getPoiAndSegIntersectionPoints(poi, seg);
         // const intersectLine = [];
 
-        // Calcul des point d'intersection seg // poi
-        for (let n = 0; n < parseInt(poiLineString.components.length - 1, 10); n++) {
-            poiLine.components['0'] = poiLineString.components[n].clone();
-            poiLine.components['1'] = poiLineString.components[n + 1].clone();
-
-            for (let m = 0; m < parseInt(segLineString.components.length - 1, 10); m++) {
-                segLine.components['0'] = segLineString.components[m].clone();
-                segLine.components['1'] = segLineString.components[m + 1].clone();
-                if (poiLine.intersects(segLine)) {
-                    intersectPoint.push({ index: n, intersect: intersection(poiLine, segLine) });
-                }
-                segLine.removeComponent('0');
-                segLine.removeComponent('1');
-            }
-            poiLine.removeComponent('0');
-            poiLine.removeComponent('1');
-        }
-        log('intersectPoint= ', intersectPoint);
+        log('intersectPoint= ', intersectPoints);
         // intégration des points au contour du POI avec memo du nouvel index
         let i = 1;
-        for (let n = 0; n < intersectPoint.length; n++) {
-            const point = intersectPoint[n].intersect;
-            const index = parseInt(intersectPoint[n].index, 10) + i;
+        for (let n = 0; n < intersectPoints.length; n++) {
+            const point = intersectPoints[n].intersect;
+            const index = intersectPoints[n].index + i;
             poiLineString.addComponent(point, index);
-            intersectPoint[n].newIndex = index;
+            intersectPoints[n].newIndex = index;
             i++;
         }
 
-        if (intersectPoint.length < 2) {
+        if (intersectPoints.length < 2) {
             WazeWrap.Alerts.error('WME Split POI', 'Create a new road segment through the area place first.');
             return;
         }
@@ -257,10 +266,10 @@
         const TabLine1 = [];
         const TabLine2 = [];
 
-        const index1 = parseInt(intersectPoint[0].newIndex, 10);
-        const index2 = parseInt(intersectPoint[1].newIndex, 10);
+        const index1 = intersectPoints[0].newIndex;
+        const index2 = intersectPoints[1].newIndex;
 
-        for (let n = 0; n < parseInt(poiLineString.components.length, 10); n++) {
+        for (let n = 0; n < poiLineString.components.length; n++) {
             const x = poiLineString.components[n].x;
             const y = poiLineString.components[n].y;
             const point = new OpenLayers.Geometry.Point(x, y);
@@ -298,7 +307,7 @@
         log('LineString1= ', LineString1);
         log('LineString2= ', LineString2);
 
-        poiGeo = new OpenLayers.Geometry.Polygon(LineString1);
+        const poiGeo = new OpenLayers.Geometry.Polygon(LineString1);
         log('poiGeo = ', poiGeo);
 
         W.model.actionManager.add(new UpdateFeatureGeometryAction(poi, W.model.venues, oldPoiGeo, poiGeo));
