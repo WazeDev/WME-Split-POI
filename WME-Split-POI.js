@@ -32,6 +32,7 @@
     const SCRIPT_VERSION = GM_info.script.version;
     const SCRIPT_NAME = GM_info.script.name;
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
+    const MINIMUM_AREA = 500.0;
 
     let UpdateFeatureGeometryAction;
     let LandmarkVectorFeature;
@@ -180,14 +181,12 @@
     }
 
     // This will return null if more than one object is selected
-    function getSingleSelectedObject() {
+    function getSelectedAreaPlace() {
         const selectedObjects = W.selectionManager.getSelectedDataModelObjects();
         if (selectedObjects.length > 1) return null;
-        return selectedObjects[0];
-    }
-
-    function isObjectAnAreaPlace(object) {
-        return object?.type === 'venue' && !object.isPoint();
+        const object = selectedObjects[0];
+        if (object.type !== 'venue' || object.isPoint()) return null;
+        return object;
     }
 
     function getNewestOnScreenSegment() {
@@ -197,6 +196,16 @@
             if (seg.getID() < newestSeg.getID() && onScreen(seg)) newestSeg = seg;
         });
         return newestSeg;
+    }
+
+    function clearComponent(geometry) {
+        geometry.removeComponent(0);
+        geometry.removeComponent(1);
+    }
+
+    function copyComponent(sourceGeometry, sourceIndex, targetGeometry) {
+        targetGeometry.components[0] = sourceGeometry.components[sourceIndex].clone();
+        targetGeometry.components[1] = sourceGeometry.components[sourceIndex + 1].clone();
     }
 
     function getPoiAndSegIntersectionPoints(poi, seg) {
@@ -211,42 +220,22 @@
 
         // Calcul des point d'intersection seg // poi
         for (let n = 0; n < poiLineString.components.length - 1; n++) {
-            poiLine.components[0] = poiLineString.components[n].clone();
-            poiLine.components[1] = poiLineString.components[n + 1].clone();
-
+            copyComponent(poiLineString, n, poiLine);
             for (let m = 0; m < segLineString.components.length - 1; m++) {
-                segLine.components[0] = segLineString.components[m].clone();
-                segLine.components[1] = segLineString.components[m + 1].clone();
+                copyComponent(segLineString, m, segLine);
                 if (poiLine.intersects(segLine)) {
                     intersectPoint.push({ index: n, intersect: intersection(poiLine, segLine) });
                 }
-                segLine.removeComponent(0);
-                segLine.removeComponent(1);
+                clearComponent(segLine);
             }
-            poiLine.removeComponent(0);
-            poiLine.removeComponent(1);
+            clearComponent(poiLine);
         }
 
         return intersectPoint;
     }
 
-    function onSplitPoiButtonClick() {
-        const poi = getSingleSelectedObject();
-        if (!isObjectAnAreaPlace(poi)) return;
-
-        const seg = getNewestOnScreenSegment();
-        if (!seg) {
-            WazeWrap.Alerts.error('WME Split POI', 'Create a new road segment through the area place first.');
-            return;
-        }
-
-        const oldPoiGeo = poi.attributes.geometry.clone();
+    function createTwoPolygonsFromIntersectPoints(poi, intersectPoints) {
         const poiLineString = poi.attributes.geometry.components[0].clone();
-
-        const intersectPoints = getPoiAndSegIntersectionPoints(poi, seg);
-        // const intersectLine = [];
-
-        log('intersectPoint= ', intersectPoints);
         // intégration des points au contour du POI avec memo du nouvel index
         let i = 1;
         for (let n = 0; n < intersectPoints.length; n++) {
@@ -257,14 +246,9 @@
             i++;
         }
 
-        if (intersectPoints.length < 2) {
-            WazeWrap.Alerts.error('WME Split POI', 'Create a new road segment through the area place first.');
-            return;
-        }
-
         // création des deux nouvelles géométries
-        const TabLine1 = [];
-        const TabLine2 = [];
+        const lineString1 = [];
+        const lineString2 = [];
 
         const index1 = intersectPoints[0].newIndex;
         const index2 = intersectPoints[1].newIndex;
@@ -275,42 +259,49 @@
             const point = new OpenLayers.Geometry.Point(x, y);
 
             if (n < index1) {
-                TabLine1.push(point);
-            }
-            if (n === index1) {
-                TabLine1.push(point);
-                TabLine2.push(point);
-            }
-            if ((index1 < n) && (n < index2)) {
-                TabLine2.push(point);
-            }
-            if (n === index2) {
-                TabLine1.push(point);
-                TabLine2.push(point);
-            }
-            if (index2 < n) {
-                TabLine1.push(point);
+                lineString1.push(point);
+            } else if (n === index1) {
+                lineString1.push(point);
+                lineString2.push(point);
+            } else if ((index1 < n) && (n < index2)) {
+                lineString2.push(point);
+            } else if (n === index2) {
+                lineString1.push(point);
+                lineString2.push(point);
+            } else if (index2 < n) {
+                lineString1.push(point);
             }
         }
 
-        /*
-    log('TabLine1['+0+']= ',TabLine1[0]);
-    log('TabLine1['+(TabLine1.length-1)+']= ',TabLine1[(TabLine1.length-1)]);
-    log('TabLine2['+0+']= ',TabLine2[0]);
-    log('TabLine2['+(TabLine2.length-1)+']= ',TabLine2[(TabLine2.length-1)]);
-    */
-        // log('TabLine1= ',TabLine1);
-        // log('TabLine2= ',TabLine2);
+        return {
+            poly1: new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString1)),
+            poly2: new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString2))
+        };
+    }
 
-        const LineString1 = new OpenLayers.Geometry.LinearRing(TabLine1);
-        const LineString2 = new OpenLayers.Geometry.LinearRing(TabLine2);
-        log('LineString1= ', LineString1);
-        log('LineString2= ', LineString2);
+    function onSplitPoiButtonClick() {
+        const poi = getSelectedAreaPlace();
+        if (!poi) return;
 
-        const poiGeo = new OpenLayers.Geometry.Polygon(LineString1);
-        log('poiGeo = ', poiGeo);
+        const seg = getNewestOnScreenSegment();
+        if (!seg) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'Create a temporary road segment through the area place first.');
+            return;
+        }
 
-        W.model.actionManager.add(new UpdateFeatureGeometryAction(poi, W.model.venues, oldPoiGeo, poiGeo));
+        const intersectPoints = getPoiAndSegIntersectionPoints(poi, seg);
+        if (intersectPoints.length !== 2) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'The temporary road segment must intersect the area place boundary at two points.');
+            return;
+        }
+
+        const newPolygons = createTwoPolygonsFromIntersectPoints(poi, intersectPoints);
+        if (newPolygons.poly1.getArea() < MINIMUM_AREA || newPolygons.poly2.getArea() < MINIMUM_AREA) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
+            return;
+        }
+
+        W.model.actionManager.add(new UpdateFeatureGeometryAction(poi, W.model.venues, poi.attributes.geometry.clone(), newPolygons.poly1));
 
         // Création du nouveau poi
         const clonePoi = new LandmarkVectorFeature();
@@ -333,7 +324,7 @@
         // clonePoiAttr.entryExitPoints = poi.attributes.entryExitPoints;
         // clonePoiAttr.images = poi.attributes.images;
 
-        clonePoi.geometry = new OpenLayers.Geometry.Polygon(LineString2);
+        clonePoi.geometry = newPolygons.poly2;
 
         log('clonePoi', clonePoi);
 
