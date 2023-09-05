@@ -32,6 +32,9 @@
     const SCRIPT_VERSION = GM_info.script.version;
     const SCRIPT_NAME = GM_info.script.name;
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
+
+    let UpdateFeatureGeometryAction;
+    let LandmarkVectorFeature;
     // let SCRIPT_OLD_VERSION = SCRIPT_VERSION;
 
     // const WMESP_Maj = {
@@ -92,34 +95,6 @@
 
     //= =========  /Helper ==============================//
 
-    // function WMESP_TestVersion() {
-    //     if (typeof (localStorage.WMESPVersion) !== 'undefined' && IsJsonString(localStorage.getItem('WMESPVersion'))) {
-    //         SCRIPT_OLD_VERSION = JSON.parse(localStorage.WMESPVersion);
-    //     } else SCRIPT_OLD_VERSION = '1.1';
-
-    //     const locale = navigator.language.match(/fr|en/);
-    //     let WMESPMaj = '';
-
-    //     if (locale != null) {
-    //         switch (locale[0]) {
-    //             case 'fr':
-    //                 WMESPMaj = WMESP_Maj.fr;
-    //                 break;
-    //             default: // including en
-    //                 WMESPMaj = WMESP_Maj.en;
-    //                 break;
-    //         }
-    //     } else if (locale == null) {
-    //         WMESPMaj = WMESP_Maj.en;
-    //     }
-    //     log(`WMESP_OldVersion =${SCRIPT_OLD_VERSION}; WMESP_Version =${SCRIPT_VERSION}`);
-    //     if (SCRIPT_OLD_VERSION !== SCRIPT_VERSION) {
-    //         alert(WMESPMaj);
-    //         SCRIPT_OLD_VERSION = SCRIPT_VERSION;
-    //     }
-    //     localStorage.setItem('WMESPVersion', JSON.stringify(SCRIPT_VERSION));
-    // }
-
     function initialize() {
         log('init');
         startScriptUpdateMonitor();
@@ -138,41 +113,9 @@
     }
 
     function initializeWazeObjects() {
-        initializeWazeUI();
-    }
-
-    function initializeWazeUI() {
-        // const userInfo = getId('user-info');
-        // if (userInfo == null) {
-        //     window.setTimeout(initializeWazeUI, 500);
-        //     return;
-        // }
-
-        // const navTabs = userInfo.getElementsByTagName('ul');
-        // if (!navTabs.length) {
-        //     window.setTimeout(initializeWazeUI, 500);
-        //     return;
-        // }
-        // if (typeof (navTabs[0]) === 'undefined') {
-        //     window.setTimeout(initializeWazeUI, 500);
-        //     return;
-        // }
-
-        // const tabContents = userInfo.getElementsByTagName('div');
-        // if (!tabContents.length) {
-        //     window.setTimeout(initializeWazeUI, 500);
-        //     return;
-        // }
-        // if (typeof (tabContents[0]) === 'undefined') {
-        //     window.setTimeout(initializeWazeUI, 500);
-        //     return;
-        // }
-
-        // WMESP_TestVersion();
-
+        UpdateFeatureGeometryAction = require('Waze/Action/UpdateFeatureGeometry');
+        LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
         W.selectionManager.events.register('selectionchanged', null, WMESP_newSelectionAvailable);
-
-        log('init done.');
     }
 
     function WMESP_newSelectionAvailable() {
@@ -214,7 +157,7 @@
                 } else {
                     $btnHandle.before(WMESP_Controle);
                 }
-                WMESP_Controle.onclick = splitPOI;
+                WMESP_Controle.onclick = onSplitPoiButtonClick;
             }
         } catch (ex) {
             console.error('Split POI:', ex);
@@ -236,10 +179,10 @@
         return true;
     }
 
-    function splitPOI() {
-        if (W.selectionManager.getSelectedDataModelObjects().length !== 1) return;
-
-        const poi = W.selectionManager.getSelectedDataModelObjects()[0];
+    function onSplitPoiButtonClick() {
+        const selectedObjects = W.selectionManager.getSelectedDataModelObjects();
+        if (selectedObjects.length !== 1) return;
+        const poi = selectedObjects[0];
         if (poi.type !== 'venue') return;
 
         const poiAttr = poi.attributes;
@@ -358,12 +301,10 @@
         poiGeo = new OpenLayers.Geometry.Polygon(LineString1);
         log('poiGeo = ', poiGeo);
 
-        const WazeActionUpdateFeatureGeometry = require('Waze/Action/UpdateFeatureGeometry');
-        W.model.actionManager.add(new WazeActionUpdateFeatureGeometry(poi, W.model.venues, oldPoiGeo, poiGeo));
+        W.model.actionManager.add(new UpdateFeatureGeometryAction(poi, W.model.venues, oldPoiGeo, poiGeo));
 
         // Création du nouveau poi
-        const WazefeatureVectorLandmark = require('Waze/Feature/Vector/Landmark');
-        const clonePoi = new WazefeatureVectorLandmark();
+        const clonePoi = new LandmarkVectorFeature();
         const clonePoiAttr = clonePoi.attributes;
 
         clonePoiAttr.adLocked = poi.attributes.adLocked;
