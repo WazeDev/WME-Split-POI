@@ -17,7 +17,8 @@
 // @author          seb-d59, WazeDev (2023-?)
 // @version         2022-08-18-001
 // @license         GPLv3
-// @grant           none
+// @grant           GM_xmlhttpRequest
+// @connect         greasyfork.org
 // ==/UserScript==
 
 /* global W */
@@ -29,6 +30,8 @@
 
     const DEBUG = false;
     const SCRIPT_VERSION = GM_info.script.version;
+    const SCRIPT_NAME = GM_info.script.name;
+    const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
     // let SCRIPT_OLD_VERSION = SCRIPT_VERSION;
 
     // const WMESP_Maj = {
@@ -37,6 +40,11 @@
     // };
 
     function bootstrap() {
+        // if (typeof (W) === 'undefined') { setTimeout(initialize, 500); return; }
+        // if (typeof (W.model) === 'undefined') { setTimeout(initialize, 500); return; }
+        // if (typeof (W.map) === 'undefined') { setTimeout(initialize, 500); return; }
+        // if (typeof (OpenLayers) === 'undefined') { setTimeout(initialize, 500); return; }
+        // if (W.loginManager.user == null) { setTimeout(initialize, 500); return; }
         if (WazeWrap.Ready) {
             initialize();
         } else {
@@ -84,42 +92,49 @@
 
     //= =========  /Helper ==============================//
 
-    function WMESP_TestVersion() {
-        // if (typeof (localStorage.WMESPVersion) !== 'undefined' && IsJsonString(localStorage.getItem('WMESPVersion'))) {
-        //     SCRIPT_OLD_VERSION = JSON.parse(localStorage.WMESPVersion);
-        // } else SCRIPT_OLD_VERSION = '1.1';
+    // function WMESP_TestVersion() {
+    //     if (typeof (localStorage.WMESPVersion) !== 'undefined' && IsJsonString(localStorage.getItem('WMESPVersion'))) {
+    //         SCRIPT_OLD_VERSION = JSON.parse(localStorage.WMESPVersion);
+    //     } else SCRIPT_OLD_VERSION = '1.1';
 
-        // const locale = navigator.language.match(/fr|en/);
-        // let WMESPMaj = '';
+    //     const locale = navigator.language.match(/fr|en/);
+    //     let WMESPMaj = '';
 
-        // if (locale != null) {
-        //     switch (locale[0]) {
-        //         case 'fr':
-        //             WMESPMaj = WMESP_Maj.fr;
-        //             break;
-        //         default: // including en
-        //             WMESPMaj = WMESP_Maj.en;
-        //             break;
-        //     }
-        // } else if (locale == null) {
-        //     WMESPMaj = WMESP_Maj.en;
-        // }
-        // log(`WMESP_OldVersion =${SCRIPT_OLD_VERSION}; WMESP_Version =${SCRIPT_VERSION}`);
-        // if (SCRIPT_OLD_VERSION !== SCRIPT_VERSION) {
-        //     alert(WMESPMaj);
-        //     SCRIPT_OLD_VERSION = SCRIPT_VERSION;
-        // }
-        // localStorage.setItem('WMESPVersion', JSON.stringify(SCRIPT_VERSION));
-    }
+    //     if (locale != null) {
+    //         switch (locale[0]) {
+    //             case 'fr':
+    //                 WMESPMaj = WMESP_Maj.fr;
+    //                 break;
+    //             default: // including en
+    //                 WMESPMaj = WMESP_Maj.en;
+    //                 break;
+    //         }
+    //     } else if (locale == null) {
+    //         WMESPMaj = WMESP_Maj.en;
+    //     }
+    //     log(`WMESP_OldVersion =${SCRIPT_OLD_VERSION}; WMESP_Version =${SCRIPT_VERSION}`);
+    //     if (SCRIPT_OLD_VERSION !== SCRIPT_VERSION) {
+    //         alert(WMESPMaj);
+    //         SCRIPT_OLD_VERSION = SCRIPT_VERSION;
+    //     }
+    //     localStorage.setItem('WMESPVersion', JSON.stringify(SCRIPT_VERSION));
+    // }
 
     function initialize() {
         log('init');
-        if (typeof (W) === 'undefined') { setTimeout(initialize, 500); return; }
-        if (typeof (W.model) === 'undefined') { setTimeout(initialize, 500); return; }
-        if (typeof (W.map) === 'undefined') { setTimeout(initialize, 500); return; }
-        if (typeof (OpenLayers) === 'undefined') { setTimeout(initialize, 500); return; }
-        if (W.loginManager.user == null) { setTimeout(initialize, 500); return; }
+        startScriptUpdateMonitor();
         initializeWazeObjects();
+    }
+
+    function startScriptUpdateMonitor() {
+        let updateMonitor;
+        try {
+            updateMonitor = new WazeWrap.Alerts.ScriptUpdateMonitor(SCRIPT_NAME, SCRIPT_VERSION, DOWNLOAD_URL, GM_xmlhttpRequest);
+            updateMonitor.start();
+        } catch (ex) {
+            // Report, but don't stop if ScriptUpdateMonitor fails.
+            console.error(`${SCRIPT_NAME}:`, ex);
+        }
     }
 
     function initializeWazeObjects() {
@@ -127,33 +142,33 @@
     }
 
     function initializeWazeUI() {
-        const userInfo = getId('user-info');
-        if (userInfo == null) {
-            window.setTimeout(initializeWazeUI, 500);
-            return;
-        }
+        // const userInfo = getId('user-info');
+        // if (userInfo == null) {
+        //     window.setTimeout(initializeWazeUI, 500);
+        //     return;
+        // }
 
-        const navTabs = userInfo.getElementsByTagName('ul');
-        if (!navTabs.length) {
-            window.setTimeout(initializeWazeUI, 500);
-            return;
-        }
-        if (typeof (navTabs[0]) === 'undefined') {
-            window.setTimeout(initializeWazeUI, 500);
-            return;
-        }
+        // const navTabs = userInfo.getElementsByTagName('ul');
+        // if (!navTabs.length) {
+        //     window.setTimeout(initializeWazeUI, 500);
+        //     return;
+        // }
+        // if (typeof (navTabs[0]) === 'undefined') {
+        //     window.setTimeout(initializeWazeUI, 500);
+        //     return;
+        // }
 
-        const tabContents = userInfo.getElementsByTagName('div');
-        if (!tabContents.length) {
-            window.setTimeout(initializeWazeUI, 500);
-            return;
-        }
-        if (typeof (tabContents[0]) === 'undefined') {
-            window.setTimeout(initializeWazeUI, 500);
-            return;
-        }
+        // const tabContents = userInfo.getElementsByTagName('div');
+        // if (!tabContents.length) {
+        //     window.setTimeout(initializeWazeUI, 500);
+        //     return;
+        // }
+        // if (typeof (tabContents[0]) === 'undefined') {
+        //     window.setTimeout(initializeWazeUI, 500);
+        //     return;
+        // }
 
-        WMESP_TestVersion();
+        // WMESP_TestVersion();
 
         W.selectionManager.events.register('selectionchanged', null, WMESP_newSelectionAvailable);
 
@@ -378,44 +393,44 @@
         // copie du nom et mise à jour du nouveau poi
 
         let street = W.model.streets.objects[poi.attributes.streetID];
-        let streetName = street.name;
-        let cityID = street.cityID;
+        let streetName = street.attributes.name;
+        let cityID = street.attributes.cityID;
         let city = W.model.cities.objects[cityID];
         let stateID = W.model.cities.objects[cityID].attributes.stateID;
         // let state = W.model.states.objects[stateID];
         let countryID = W.model.cities.objects[cityID].attributes.countryID;
         // let country = W.model.countries.objects[countryID];
 
-        if (!street.isEmpty || !city.attributes.isEmpty) { // nok
+        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
             const newAtts = {
-                emptyStreet: true,
+                emptyStreet: true, // TODO: fix this
                 stateID,
                 countryID,
                 cityName: city.attributes.name,
                 streetName,
-                emptyCity: true
+                emptyCity: true // TODO: fix this
             };
             log('Natural feature POI: no street name and city');
             const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
             W.model.actionManager.add(new WazeActionUpdateFeatureAddress(poi, newAtts));
         }
         street = W.model.streets.objects[clonePoi.attributes.streetID];
-        streetName = street.name;
-        cityID = street.cityID;
+        streetName = street.attributes.name;
+        cityID = street.attributes.cityID;
         city = W.model.cities.objects[cityID];
         stateID = W.model.cities.objects[cityID].attributes.stateID;
         // state = W.model.states.objects[stateID];
         countryID = W.model.cities.objects[cityID].attributes.countryID;
         // country = W.model.countries.objects[countryID];
 
-        if (!street.isEmpty || !city.attributes.isEmpty) { // nok
+        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
             const newAtts = {
-                emptyStreet: true,
+                emptyStreet: true, // TODO: fix this
                 stateID,
                 countryID,
                 cityName: city.attributes.name,
                 streetName,
-                emptyCity: true
+                emptyCity: true // TODO: fix this
             };
             log('Natural feature POI: no street name and city');
             const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
