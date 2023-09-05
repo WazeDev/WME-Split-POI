@@ -198,17 +198,17 @@
         return newestSeg;
     }
 
-    function clearComponent(geometry) {
-        geometry.removeComponent(0);
-        geometry.removeComponent(1);
-    }
-
-    function copyComponent(sourceGeometry, sourceIndex, targetGeometry) {
-        targetGeometry.components[0] = sourceGeometry.components[sourceIndex].clone();
-        targetGeometry.components[1] = sourceGeometry.components[sourceIndex + 1].clone();
-    }
-
     function getPoiAndSegIntersectionPoints(poi, seg) {
+        function clearComponent(geometry) {
+            geometry.removeComponent(0);
+            geometry.removeComponent(1);
+        }
+
+        function copyComponent(sourceGeometry, sourceIndex, targetGeometry) {
+            targetGeometry.components[0] = sourceGeometry.components[sourceIndex].clone();
+            targetGeometry.components[1] = sourceGeometry.components[sourceIndex + 1].clone();
+        }
+
         const poiAttr = poi.attributes;
         const poiGeo = poiAttr.geometry.clone();
         const poiLineString = poiGeo.components[0].clone();
