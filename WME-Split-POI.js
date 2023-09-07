@@ -36,37 +36,15 @@
 
     let UpdateFeatureGeometryAction;
     let LandmarkVectorFeature;
-    // let SCRIPT_OLD_VERSION = SCRIPT_VERSION;
-
-    // const WMESP_Maj = {
-    //     fr: `Mise à jour WME Split POI: v${SCRIPT_VERSION}\nCompatibilité New WME`,
-    //     en: `Update WME Split POI: v${SCRIPT_VERSION}\nCompatibility New WME`
-    // };
+    let DeleteObjectAction;
 
     function bootstrap() {
-        // if (typeof (W) === 'undefined') { setTimeout(initialize, 500); return; }
-        // if (typeof (W.model) === 'undefined') { setTimeout(initialize, 500); return; }
-        // if (typeof (W.map) === 'undefined') { setTimeout(initialize, 500); return; }
-        // if (typeof (OpenLayers) === 'undefined') { setTimeout(initialize, 500); return; }
-        // if (W.loginManager.user == null) { setTimeout(initialize, 500); return; }
         if (WazeWrap.Ready) {
             initialize();
         } else {
             setTimeout(bootstrap, 100);
         }
     }
-
-    // ==========  Helper ==============================//
-    // function getElementsByClassName(classname, node) {
-    //     if (!node) node = document.getElementsByTagName('body')[0];
-    //     const a = [];
-    //     const re = new RegExp(`\\b${classname}\\b`);
-    //     const els = node.getElementsByTagName('*');
-    //     for (let i = 0, j = els.length; i < j; i++) {
-    //         if (re.test(els[i].className)) a.push(els[i]);
-    //     }
-    //     return a;
-    // }
 
     function getId(node) {
         return document.getElementById(node);
@@ -79,22 +57,6 @@
             console.debug(`WME Split POI v${SCRIPT_VERSION} - ${msg} `, obj);
         }
     }
-
-    // function IsJsonString(str) {
-    //     try {
-    //         JSON.parse(str);
-    //     } catch (e) {
-    //         return false;
-    //     }
-    //     return true;
-    // }
-
-    // function cloneObj(obj) {
-    //     const copy = JSON.parse(JSON.stringify(obj));
-    //     return copy;
-    // }
-
-    //= =========  /Helper ==============================//
 
     function initialize() {
         log('init');
@@ -115,6 +77,7 @@
 
     function initializeWazeObjects() {
         UpdateFeatureGeometryAction = require('Waze/Action/UpdateFeatureGeometry');
+        DeleteObjectAction = require('Waze/Action/DeleteObject');
         LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
         W.selectionManager.events.register('selectionchanged', null, WMESP_newSelectionAvailable);
     }
@@ -262,12 +225,12 @@
                 lineString1.push(point);
             } else if (n === index1) {
                 lineString1.push(point);
-                lineString2.push(point);
+                lineString2.push(point.clone());
             } else if ((index1 < n) && (n < index2)) {
                 lineString2.push(point);
             } else if (n === index2) {
                 lineString1.push(point);
-                lineString2.push(point);
+                lineString2.push(point.clone());
             } else if (index2 < n) {
                 lineString1.push(point);
             }
@@ -279,7 +242,98 @@
         };
     }
 
-    function onSplitPoiButtonClick() {
+    function cloneAttribute(poi, attrName, newAttributesObject) {
+        if (poi.attributes.hasOwnProperty(attrName)) {
+            let value = poi.attributes[attrName];
+            if (typeof value === 'object') {
+                value = JSON.parse(JSON.stringify(poi.attributes[attrName]));
+            }
+            newAttributesObject[attrName] = value;
+        }
+    }
+
+    function createClonePoi(poi, newGeometry) {
+        // Création du nouveau poi
+        const clonePoi = new LandmarkVectorFeature();
+        const clonePoiAttr = clonePoi.attributes;
+
+        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'description', 'externalProviderIDs',
+            'houseNumber', 'lockRank', 'name', 'openingHours', 'phone', 'residential', 'services',
+            'url'].forEach(attrName => cloneAttribute(poi, attrName, clonePoiAttr));
+
+        // clonePoiAttr.adLocked = poi.attributes.adLocked;
+        // clonePoiAttr.aliases = poi.attributes.aliases;
+        // clonePoiAttr.approved = poi.attributes.approved;
+        // clonePoiAttr.categories = poi.attributes.categories;
+        // clonePoiAttr.description = poi.attributes.description;
+        // clonePoiAttr.externalProviderIDs = poi.attributes.externalProviderIDs;
+        // clonePoiAttr.houseNumber = poi.attributes.houseNumber;
+        // clonePoiAttr.openingHours = poi.attributes.openingHours;
+        // clonePoiAttr.lockRank = poi.attributes.lockRank;
+        // clonePoiAttr.name = poi.attributes.name;
+        // clonePoiAttr.residential = poi.attributes.residential;
+        // clonePoiAttr.phone = poi.attributes.phone;
+        // clonePoiAttr.services = poi.attributes.services;
+        // clonePoiAttr.url = poi.attributes.url;
+        // if (poi.attributes.brand) {
+        //     clonePoiAttr.brand = poi.attributes.brand;
+        // }
+        // clonePoiAttr.entryExitPoints = poi.attributes.entryExitPoints;
+        // clonePoiAttr.images = poi.attributes.images;
+
+        clonePoi.geometry = newGeometry;
+
+        log('clonePoi', clonePoi);
+
+        const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
+        W.model.actionManager.add(new WazeActionAddLandmark(clonePoi));
+
+        const street = W.model.streets.objects[poi.attributes.streetID];
+        const streetName = street.attributes.name;
+        const cityID = street.attributes.cityID;
+        const city = W.model.cities.objects[cityID];
+        const stateID = W.model.cities.objects[cityID].attributes.stateID;
+        // let state = W.model.states.objects[stateID];
+        const countryID = W.model.cities.objects[cityID].attributes.countryID;
+        // let country = W.model.countries.objects[countryID];
+
+        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
+            const newAtts = {
+                emptyStreet: true, // TODO: fix this
+                stateID,
+                countryID,
+                cityName: city.attributes.name,
+                streetName,
+                emptyCity: true // TODO: fix this
+            };
+            log('Natural feature POI: no street name and city');
+            const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
+            W.model.actionManager.add(new WazeActionUpdateFeatureAddress(poi, newAtts));
+        }
+    }
+
+    function confirmDeletionOfOriginalPoi(poi) {
+        const entryExitPointsLen = poi.attributes.entryExitPoints?.length;
+        const imagesLen = poi.attributes.images?.length;
+        let warningText = 'WARNING: The original place will be deleted!';
+
+        if (entryExitPointsLen || imagesLen) {
+            warningText += ' The following property(s) will be lost:';
+            if (imagesLen) warningText += `\n- ${imagesLen} image${imagesLen === 1 ? '' : 's'}`;
+            if (entryExitPointsLen) warningText += `\n- ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
+        }
+        warningText += '\n';
+        return new Promise(resolve => {
+            WazeWrap.Alerts.confirm(
+                SCRIPT_NAME,
+                warningText,
+                () => resolve(true),
+                () => resolve(false)
+            );
+        });
+    }
+
+    async function onSplitPoiButtonClick() {
         const poi = getSelectedAreaPlace();
         if (!poi) return;
 
@@ -301,84 +355,13 @@
             return;
         }
 
-        W.model.actionManager.add(new UpdateFeatureGeometryAction(poi, W.model.venues, poi.attributes.geometry.clone(), newPolygons.poly1));
-
+        const confirm = await confirmDeletionOfOriginalPoi(poi);
+        if (confirm) {
         // Création du nouveau poi
-        const clonePoi = new LandmarkVectorFeature();
-        const clonePoiAttr = clonePoi.attributes;
-
-        clonePoiAttr.adLocked = poi.attributes.adLocked;
-        clonePoiAttr.aliases = poi.attributes.aliases;
-        clonePoiAttr.approved = poi.attributes.approved;
-        clonePoiAttr.categories = poi.attributes.categories;
-        clonePoiAttr.description = poi.attributes.description;
-        clonePoiAttr.externalProviderIDs = poi.attributes.externalProviderIDs;
-        clonePoiAttr.houseNumber = poi.attributes.houseNumber;
-        clonePoiAttr.openingHours = poi.attributes.openingHours;
-        clonePoiAttr.lockRank = poi.attributes.lockRank;
-        clonePoiAttr.name = poi.attributes.name;
-        clonePoiAttr.residential = poi.attributes.residential;
-        clonePoiAttr.phone = poi.attributes.phone;
-        clonePoiAttr.services = poi.attributes.services;
-        clonePoiAttr.url = poi.attributes.url;
-        // clonePoiAttr.entryExitPoints = poi.attributes.entryExitPoints;
-        // clonePoiAttr.images = poi.attributes.images;
-
-        clonePoi.geometry = newPolygons.poly2;
-
-        log('clonePoi', clonePoi);
-
-        const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
-        W.model.actionManager.add(new WazeActionAddLandmark(clonePoi));
-
-        // copie du nom et mise à jour du nouveau poi
-
-        let street = W.model.streets.objects[poi.attributes.streetID];
-        let streetName = street.attributes.name;
-        let cityID = street.attributes.cityID;
-        let city = W.model.cities.objects[cityID];
-        let stateID = W.model.cities.objects[cityID].attributes.stateID;
-        // let state = W.model.states.objects[stateID];
-        let countryID = W.model.cities.objects[cityID].attributes.countryID;
-        // let country = W.model.countries.objects[countryID];
-
-        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
-            const newAtts = {
-                emptyStreet: true, // TODO: fix this
-                stateID,
-                countryID,
-                cityName: city.attributes.name,
-                streetName,
-                emptyCity: true // TODO: fix this
-            };
-            log('Natural feature POI: no street name and city');
-            const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
-            W.model.actionManager.add(new WazeActionUpdateFeatureAddress(poi, newAtts));
+            createClonePoi(poi, newPolygons.poly1);
+            createClonePoi(poi, newPolygons.poly2);
+            W.model.actionManager.add(new DeleteObjectAction(poi, null));
         }
-        street = W.model.streets.objects[clonePoi.attributes.streetID];
-        streetName = street.attributes.name;
-        cityID = street.attributes.cityID;
-        city = W.model.cities.objects[cityID];
-        stateID = W.model.cities.objects[cityID].attributes.stateID;
-        // state = W.model.states.objects[stateID];
-        countryID = W.model.cities.objects[cityID].attributes.countryID;
-        // country = W.model.countries.objects[countryID];
-
-        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
-            const newAtts = {
-                emptyStreet: true, // TODO: fix this
-                stateID,
-                countryID,
-                cityName: city.attributes.name,
-                streetName,
-                emptyCity: true // TODO: fix this
-            };
-            log('Natural feature POI: no street name and city');
-            const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
-            W.model.actionManager.add(new WazeActionUpdateFeatureAddress(clonePoi, newAtts));
-        }
-
-        // log('model.actionManager = ',model.actionManager);
     }
 
     function intersection(D1, D2) {
