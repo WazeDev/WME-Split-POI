@@ -36,6 +36,7 @@
 
     let LandmarkVectorFeature;
     let DeleteObjectAction;
+    let UpdateObjectAction;
     let UpdateFeatureAddressAction;
 
     function bootstrap() {
@@ -76,6 +77,7 @@
     }
 
     function initializeWazeObjects() {
+        UpdateObjectAction = require('Waze/Action/UpdateObject');
         DeleteObjectAction = require('Waze/Action/DeleteObject');
         LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
         UpdateFeatureAddressAction = require('Waze/Action/UpdateFeatureAddress');
@@ -103,6 +105,9 @@
 
             // On verifie que le segment est éditable
             if (!objIsEditable(selectedObject)) return;
+
+            // Exclude gas station and EVCS categories (don't ever want to delete those by splitting):
+            if (selectedObject.attributes.categories.some(cat => ['GAS_STATION', 'CHARGING_STATION'].includes(cat))) return;
 
             if (selectedObject.type === 'venue') {
                 let addAfter = true;
@@ -244,6 +249,13 @@
 
     function cloneAttribute(poi, attrName, newAttributesObject) {
         if (poi.attributes.hasOwnProperty(attrName)) {
+            let value = poi.attributes[attrName];
+
+            if (Array.isArray(value)) {
+                value = value.slice(0); // copy array
+            } else if (typeof value === 'object') {
+                value = JSON.parse(JSON.stringify(value));
+            }
             newAttributesObject[attrName] = poi.attributes[attrName];
         }
     }
@@ -251,11 +263,6 @@
     function createClonePoi(poi, newGeometry) {
         // Création du nouveau poi
         const clonePoi = new LandmarkVectorFeature();
-        const clonePoiAttr = clonePoi.attributes;
-
-        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'description', /* 'externalProviderIDs', */
-            'houseNumber', 'lockRank', 'name', 'openingHours', 'phone', 'residential', 'services',
-            'url'].forEach(attrName => cloneAttribute(poi, attrName, clonePoiAttr));
 
         // clonePoiAttr.adLocked = poi.attributes.adLocked;
         // clonePoiAttr.aliases = poi.attributes.aliases;
@@ -284,6 +291,14 @@
         const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
         W.model.actionManager.add(new WazeActionAddLandmark(clonePoi));
 
+        const clonePoiAttr = {};
+
+        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'categoryAttributes', 'description', /* 'externalProviderIDs', */
+            'houseNumber', 'lockRank', 'name', 'openingHours', 'phone', 'residential', 'services',
+            'url'].forEach(attrName => cloneAttribute(poi, attrName, clonePoiAttr));
+
+       // W.model.actionManager.add(new UpdateObjectAction(clonePoi, clonePoiAttr));
+
         const street = W.model.streets.objects[poi.attributes.streetID];
         const streetName = street.attributes.name;
         const cityID = street.attributes.cityID;
@@ -311,12 +326,14 @@
     function confirmDeletionOfOriginalPoi(poi) {
         const entryExitPointsLen = poi.attributes.entryExitPoints?.length;
         const imagesLen = poi.attributes.images?.length;
+        const extProvidersLen = poi.attributes.externalProviderIDs?.length;
         let warningText = 'WARNING: The original place will be deleted!';
 
-        if (entryExitPointsLen || imagesLen) {
+        if (entryExitPointsLen || imagesLen || extProvidersLen) {
             warningText += ' The following property(s) will be lost:';
-            if (imagesLen) warningText += `\n- ${imagesLen} image${imagesLen === 1 ? '' : 's'}`;
-            if (entryExitPointsLen) warningText += `\n- ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
+            if (imagesLen) warningText += `\n • ${imagesLen} image${imagesLen === 1 ? '' : 's'}`;
+            if (entryExitPointsLen) warningText += `\n • ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
+            if (extProvidersLen) warningText += `\n • ${extProvidersLen} linked Google place${extProvidersLen === 1 ? '' : 's'}`;
         }
         warningText += '\n';
         return new Promise(resolve => {
@@ -356,9 +373,9 @@
         // Création du nouveau poi
             createClonePoi(poi, newPolygons.poly1);
             createClonePoi(poi, newPolygons.poly2);
-            W.model.actionManager.add(new DeleteObjectAction(poi, null));
+            //W.model.actionManager.add(new DeleteObjectAction(poi, null));
 
-            WazeWrap.Alerts.info('Splits created and original POI deleted.\nPlease verify/update all place attributes before saving.');
+            WazeWrap.Alerts.info(SCRIPT_NAME, 'Splits created and original POI deleted.\nPlease verify/update all place attributes before saving.');
         }
     }
 
