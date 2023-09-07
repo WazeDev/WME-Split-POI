@@ -34,9 +34,9 @@
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
     const MINIMUM_AREA = 500.0;
 
-    let UpdateFeatureGeometryAction;
     let LandmarkVectorFeature;
     let DeleteObjectAction;
+    let UpdateFeatureAddressAction;
 
     function bootstrap() {
         if (WazeWrap.Ready) {
@@ -76,9 +76,9 @@
     }
 
     function initializeWazeObjects() {
-        UpdateFeatureGeometryAction = require('Waze/Action/UpdateFeatureGeometry');
         DeleteObjectAction = require('Waze/Action/DeleteObject');
         LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
+        UpdateFeatureAddressAction = require('Waze/Action/UpdateFeatureAddress');
         W.selectionManager.events.register('selectionchanged', null, WMESP_newSelectionAvailable);
     }
 
@@ -244,11 +244,7 @@
 
     function cloneAttribute(poi, attrName, newAttributesObject) {
         if (poi.attributes.hasOwnProperty(attrName)) {
-            let value = poi.attributes[attrName];
-            if (typeof value === 'object') {
-                value = JSON.parse(JSON.stringify(poi.attributes[attrName]));
-            }
-            newAttributesObject[attrName] = value;
+            newAttributesObject[attrName] = poi.attributes[attrName];
         }
     }
 
@@ -257,7 +253,7 @@
         const clonePoi = new LandmarkVectorFeature();
         const clonePoiAttr = clonePoi.attributes;
 
-        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'description', 'externalProviderIDs',
+        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'description', /* 'externalProviderIDs', */
             'houseNumber', 'lockRank', 'name', 'openingHours', 'phone', 'residential', 'services',
             'url'].forEach(attrName => cloneAttribute(poi, attrName, clonePoiAttr));
 
@@ -299,16 +295,16 @@
 
         if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
             const newAtts = {
-                emptyStreet: true, // TODO: fix this
+                emptyStreet: street.attributes.isEmpty, // TODO: fix this
                 stateID,
                 countryID,
                 cityName: city.attributes.name,
                 streetName,
-                emptyCity: true // TODO: fix this
+                houseNumber: poi.attributes.houseNumber,
+                emptyCity: city.attributes.isEmpty // TODO: fix this
             };
             log('Natural feature POI: no street name and city');
-            const WazeActionUpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
-            W.model.actionManager.add(new WazeActionUpdateFeatureAddress(poi, newAtts));
+            W.model.actionManager.add(new UpdateFeatureAddressAction(clonePoi, newAtts));
         }
     }
 
@@ -361,6 +357,8 @@
             createClonePoi(poi, newPolygons.poly1);
             createClonePoi(poi, newPolygons.poly2);
             W.model.actionManager.add(new DeleteObjectAction(poi, null));
+
+            WazeWrap.Alerts.info('Splits created and original POI deleted.\nPlease verify/update all place attributes before saving.');
         }
     }
 
