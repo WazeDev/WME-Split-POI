@@ -315,7 +315,7 @@
         }
     }
 
-    function confirmDeletionOfOriginalPoi(poi) {
+    function confirmBeforeSplitting(poi) {
         const entryExitPointsLen = poi.attributes.entryExitPoints?.length;
         const imagesLen = poi.attributes.images?.length;
         const extProvidersLen = poi.attributes.externalProviderIDs?.length;
@@ -327,6 +327,7 @@
         }
         if (entryExitPointsLen || extProvidersLen) {
             warningText += '\n\nThe following properties will be copied but must be changed:';
+            warningText += '\n • name ("copy #" will be appended)';
             if (entryExitPointsLen) warningText += `\n • ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
             if (extProvidersLen) warningText += `\n • ${extProvidersLen} linked Google place${extProvidersLen === 1 ? '' : 's'}`;
         }
@@ -370,7 +371,7 @@
             return;
         }
 
-        const confirm = await confirmDeletionOfOriginalPoi(poi);
+        const confirm = await confirmBeforeSplitting(poi);
         if (confirm) {
             const actions = [];
             addClonePoiAction(poi, newPolygons[0], 1, actions);
