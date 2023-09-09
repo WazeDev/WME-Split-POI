@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 /* eslint-disable prefer-destructuring */
 /* eslint-disable camelcase */
 // ==UserScript==
@@ -32,12 +33,14 @@
     const SCRIPT_VERSION = GM_info.script.version;
     const SCRIPT_NAME = GM_info.script.name;
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
-    const MINIMUM_AREA = 500.0;
+    const MINIMUM_AREA = 100.0;
 
     let LandmarkVectorFeature;
     let DeleteObjectAction;
+    let DeleteSegmentAction;
     let UpdateObjectAction;
     let UpdateFeatureAddressAction;
+    let MultiAction;
 
     function bootstrap() {
         if (WazeWrap.Ready) {
@@ -79,12 +82,14 @@
     function initializeWazeObjects() {
         UpdateObjectAction = require('Waze/Action/UpdateObject');
         DeleteObjectAction = require('Waze/Action/DeleteObject');
+        DeleteSegmentAction = require('Waze/Action/DeleteSegment');
         LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
         UpdateFeatureAddressAction = require('Waze/Action/UpdateFeatureAddress');
-        W.selectionManager.events.register('selectionchanged', null, WMESP_newSelectionAvailable);
+        MultiAction = require('Waze/Action/MultiAction');
+        W.selectionManager.events.register('selectionchanged', null, onSelectionChanged);
     }
 
-    function WMESP_newSelectionAvailable() {
+    function onSelectionChanged() {
         try {
             if (W.selectionManager.getSelectedDataModelObjects().length !== 1) return;
 
@@ -98,7 +103,7 @@
 
             const editPanel = getId('edit-panel');
             if (editPanel.firstElementChild.style.display === 'none') {
-                window.setTimeout(WMESP_newSelectionAvailable, 100);
+                window.setTimeout(onSelectionChanged, 100);
             }
 
             // ok: 1 selected item and pannel is shown
@@ -157,11 +162,16 @@
         return object;
     }
 
-    function getNewestOnScreenSegment() {
+    function getNewestUnconnectedOnScreenSegment() {
         const newSegs = W.model.segments.getObjectArray(seg => seg.isNew());
-        let newestSeg = newSegs[0];
+        let newestSeg;
+        let newestId = 0;
         newSegs.forEach(seg => {
-            if (seg.getID() < newestSeg.getID() && onScreen(seg)) newestSeg = seg;
+            const hasConnections = seg.getToNode().getSegmentIds().length > 1 || seg.getFromNode().getSegmentIds().length > 1;
+            if (seg.getID() < newestId && onScreen(seg) && !hasConnections) {
+                newestSeg = seg;
+                newestId = seg.getID();
+            }
         });
         return newestSeg;
     }
@@ -241,10 +251,10 @@
             }
         }
 
-        return {
-            poly1: new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString1)),
-            poly2: new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString2))
-        };
+        return [
+            new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString1)),
+            new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString2))
+        ];
     }
 
     function cloneAttribute(poi, attrName, newAttributesObject) {
@@ -253,61 +263,43 @@
 
             if (Array.isArray(value)) {
                 value = value.slice(0); // copy array
-            } else if (typeof value === 'object') {
-                value = JSON.parse(JSON.stringify(value));
             }
             newAttributesObject[attrName] = poi.attributes[attrName];
         }
     }
 
-    function createClonePoi(poi, newGeometry) {
-        // Création du nouveau poi
+    function addClonePoiAction(poi, newGeometry, nameSuffixIndex, actions) {
         const clonePoi = new LandmarkVectorFeature();
-
-        // clonePoiAttr.adLocked = poi.attributes.adLocked;
-        // clonePoiAttr.aliases = poi.attributes.aliases;
-        // clonePoiAttr.approved = poi.attributes.approved;
-        // clonePoiAttr.categories = poi.attributes.categories;
-        // clonePoiAttr.description = poi.attributes.description;
-        // clonePoiAttr.externalProviderIDs = poi.attributes.externalProviderIDs;
-        // clonePoiAttr.houseNumber = poi.attributes.houseNumber;
-        // clonePoiAttr.openingHours = poi.attributes.openingHours;
-        // clonePoiAttr.lockRank = poi.attributes.lockRank;
-        // clonePoiAttr.name = poi.attributes.name;
-        // clonePoiAttr.residential = poi.attributes.residential;
-        // clonePoiAttr.phone = poi.attributes.phone;
-        // clonePoiAttr.services = poi.attributes.services;
-        // clonePoiAttr.url = poi.attributes.url;
-        // if (poi.attributes.brand) {
-        //     clonePoiAttr.brand = poi.attributes.brand;
-        // }
-        // clonePoiAttr.entryExitPoints = poi.attributes.entryExitPoints;
-        // clonePoiAttr.images = poi.attributes.images;
-
-        clonePoi.geometry = newGeometry;
-
-        log('clonePoi', clonePoi);
+        [
+            'aliases',
+            'categories',
+            'description',
+            'entryExitPoints',
+            'externalProviderIDs',
+            'houseNumber',
+            'lockRank',
+            'name',
+            'openingHours',
+            'phone',
+            'services',
+            'streetID',
+            'url'
+        ].forEach(attrName => cloneAttribute(poi, attrName, clonePoi.attributes));
+        if (clonePoi.attributes.name) clonePoi.attributes.name += ` (copy ${nameSuffixIndex})`; // IMPORTANT! Won't save for some reason without changing the names (at least for PLAs).
+        if (poi.attributes.categoryAttributes.PARKING_LOT) {
+            clonePoi.attributes.categoryAttributes.PARKING_LOT = JSON.parse(JSON.stringify(poi.attributes.categoryAttributes.PARKING_LOT));
+        }
+        clonePoi.attributes.geometry = newGeometry;
 
         const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
-        W.model.actionManager.add(new WazeActionAddLandmark(clonePoi));
+        actions.push(new WazeActionAddLandmark(clonePoi));
 
-        const clonePoiAttr = {};
-
-        ['adLocked', 'aliases', 'approved', 'brand', 'categories', 'categoryAttributes', 'description', /* 'externalProviderIDs', */
-            'houseNumber', 'lockRank', 'name', 'openingHours', 'phone', 'residential', 'services',
-            'url'].forEach(attrName => cloneAttribute(poi, attrName, clonePoiAttr));
-
-       // W.model.actionManager.add(new UpdateObjectAction(clonePoi, clonePoiAttr));
-
-        const street = W.model.streets.objects[poi.attributes.streetID];
+        const street = W.model.streets.getObjectById(poi.attributes.streetID);
         const streetName = street.attributes.name;
         const cityID = street.attributes.cityID;
-        const city = W.model.cities.objects[cityID];
-        const stateID = W.model.cities.objects[cityID].attributes.stateID;
-        // let state = W.model.states.objects[stateID];
-        const countryID = W.model.cities.objects[cityID].attributes.countryID;
-        // let country = W.model.countries.objects[countryID];
-
+        const city = W.model.cities.getObjectById(cityID);
+        const stateID = city.attributes.stateID;
+        const countryID = city.attributes.countryID;
         if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
             const newAtts = {
                 emptyStreet: street.attributes.isEmpty, // TODO: fix this
@@ -315,11 +307,11 @@
                 countryID,
                 cityName: city.attributes.name,
                 streetName,
-                houseNumber: poi.attributes.houseNumber,
                 emptyCity: city.attributes.isEmpty // TODO: fix this
             };
-            log('Natural feature POI: no street name and city');
-            W.model.actionManager.add(new UpdateFeatureAddressAction(clonePoi, newAtts));
+            const updateAddressAction = new UpdateFeatureAddressAction(clonePoi, newAtts);
+            updateAddressAction.options.updateHouseNumber = true;
+            actions.push(updateAddressAction);
         }
     }
 
@@ -329,12 +321,16 @@
         const extProvidersLen = poi.attributes.externalProviderIDs?.length;
         let warningText = 'WARNING: The original place will be deleted!';
 
-        if (entryExitPointsLen || imagesLen || extProvidersLen) {
-            warningText += ' The following property(s) will be lost:';
-            if (imagesLen) warningText += `\n • ${imagesLen} image${imagesLen === 1 ? '' : 's'}`;
+        if (imagesLen) {
+            warningText += '\n\nThe following property(s) will be lost:';
+            if (imagesLen) warningText += `\n • ${imagesLen} photo${imagesLen === 1 ? '' : 's'} (permanently deleted after saving)`;
+        }
+        if (entryExitPointsLen || extProvidersLen) {
+            warningText += '\n\nThe following properties will be copied but must be changed:';
             if (entryExitPointsLen) warningText += `\n • ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
             if (extProvidersLen) warningText += `\n • ${extProvidersLen} linked Google place${extProvidersLen === 1 ? '' : 's'}`;
         }
+        warningText += '\n\nVerify <i>all</i> properties of the new places before saving.';
         warningText += '\n';
         return new Promise(resolve => {
             WazeWrap.Alerts.confirm(
@@ -350,9 +346,15 @@
         const poi = getSelectedAreaPlace();
         if (!poi) return;
 
-        const seg = getNewestOnScreenSegment();
+        // This is needed in case the category is changed to GS or EVCS and the split button is still there.
+        if (poi.attributes.categories.some(cat => ['GAS_STATION', 'CHARGING_STATION'].includes(cat))) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'Cannot split gas stations or EV charging stations');
+            return;
+        }
+
+        const seg = getNewestUnconnectedOnScreenSegment();
         if (!seg) {
-            WazeWrap.Alerts.error(SCRIPT_NAME, 'Create a temporary road segment through the area place first.');
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'Create a temporary unconnected road segment through the area place first.');
             return;
         }
 
@@ -363,19 +365,20 @@
         }
 
         const newPolygons = createTwoPolygonsFromIntersectPoints(poi, intersectPoints);
-        if (newPolygons.poly1.getArea() < MINIMUM_AREA || newPolygons.poly2.getArea() < MINIMUM_AREA) {
+        if (newPolygons[0].getArea() < MINIMUM_AREA || newPolygons[1].getArea() < MINIMUM_AREA) {
             WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
             return;
         }
 
         const confirm = await confirmDeletionOfOriginalPoi(poi);
         if (confirm) {
-        // Création du nouveau poi
-            createClonePoi(poi, newPolygons.poly1);
-            createClonePoi(poi, newPolygons.poly2);
-            //W.model.actionManager.add(new DeleteObjectAction(poi, null));
-
-            WazeWrap.Alerts.info(SCRIPT_NAME, 'Splits created and original POI deleted.\nPlease verify/update all place attributes before saving.');
+            const actions = [];
+            addClonePoiAction(poi, newPolygons[0], 1, actions);
+            addClonePoiAction(poi, newPolygons[1], 2, actions);
+            actions.push(new DeleteObjectAction(poi, null));
+            actions.push(new DeleteSegmentAction(seg));
+            const multiaction = new MultiAction(actions, { description: 'Split POI' });
+            W.model.actionManager.add(multiaction);
         }
     }
 
