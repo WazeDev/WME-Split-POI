@@ -358,6 +358,11 @@
             return;
         }
 
+        if (seg.geometry.components.some(pt => poi.geometry.containsPoint(pt))) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'The splitting road segment must be straight (no geometry handles within the POI).');
+            return;
+        }
+
         const intersectPoints = getPoiAndSegIntersectionPoints(poi, seg);
         if (intersectPoints.length !== 2) {
             WazeWrap.Alerts.error(SCRIPT_NAME, 'The temporary road segment must intersect the area place boundary at two points.');
