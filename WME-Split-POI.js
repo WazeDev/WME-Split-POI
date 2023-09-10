@@ -38,7 +38,6 @@
     let LandmarkVectorFeature;
     let DeleteObjectAction;
     let DeleteSegmentAction;
-    let UpdateObjectAction;
     let UpdateFeatureAddressAction;
     let MultiAction;
 
@@ -80,7 +79,6 @@
     }
 
     function initializeWazeObjects() {
-        UpdateObjectAction = require('Waze/Action/UpdateObject');
         DeleteObjectAction = require('Waze/Action/DeleteObject');
         DeleteSegmentAction = require('Waze/Action/DeleteSegment');
         LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
@@ -114,7 +112,7 @@
             // Exclude gas station and EVCS categories (don't ever want to delete those by splitting):
             if (selectedObject.attributes.categories.some(cat => ['GAS_STATION', 'CHARGING_STATION'].includes(cat))) return;
 
-            if (selectedObject.type === 'venue') {
+            if (selectedObject.type === 'venue' && !$('#split-poi-button').length) {
                 let addAfter = true;
                 let $btnHandle = $('.geometry-type-control-area')[0];
                 if (!$btnHandle) {
@@ -124,6 +122,7 @@
                 const WMESP_Controle = document.createElement('wz-button');
                 WMESP_Controle.color = 'secondary';
                 WMESP_Controle.size = 'sm';
+                WMESP_Controle.id = 'split-poi-button';
                 WMESP_Controle.className = 'geometry-type-control-button geometry-type-control-point';
                 WMESP_Controle.innerHTML = '<i class="fa fa-cut" style="font-size:24px;" title="Split POI"></i>';
                 if (addAfter) {
@@ -300,12 +299,14 @@
         const city = W.model.cities.getObjectById(cityID);
         const stateID = city.attributes.stateID;
         const countryID = city.attributes.countryID;
+        const houseNumber = poi.attributes.houseNumber;
         if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
             const newAtts = {
                 emptyStreet: street.attributes.isEmpty, // TODO: fix this
                 stateID,
                 countryID,
                 cityName: city.attributes.name,
+                houseNumber,
                 streetName,
                 emptyCity: city.attributes.isEmpty // TODO: fix this
             };
@@ -325,13 +326,11 @@
             warningText += '\n\nThe following property(s) will be lost:';
             if (imagesLen) warningText += `\n • ${imagesLen} photo${imagesLen === 1 ? '' : 's'} (permanently deleted after saving)`;
         }
-        if (entryExitPointsLen || extProvidersLen) {
-            warningText += '\n\nThe following properties will be copied but must be changed:';
-            warningText += '\n • name ("copy #" will be appended)';
-            if (entryExitPointsLen) warningText += `\n • ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
-            if (extProvidersLen) warningText += `\n • ${extProvidersLen} linked Google place${extProvidersLen === 1 ? '' : 's'}`;
-        }
-        warningText += '\n\nVerify <i>all</i> properties of the new places before saving.';
+        warningText += '\n\nThe following properties likely need to be changed after splitting:';
+        warningText += '\n • name ("copy #" will be appended)';
+        if (entryExitPointsLen) warningText += `\n • ${entryExitPointsLen} entry/exit point${entryExitPointsLen === 1 ? '' : 's'}`;
+        if (extProvidersLen) warningText += `\n • ${extProvidersLen} linked Google place${extProvidersLen === 1 ? '' : 's'}`;
+        warningText += '\n\nReview <i>all</i> properties of both new places before saving.';
         warningText += '\n';
         return new Promise(resolve => {
             WazeWrap.Alerts.confirm(
@@ -391,7 +390,7 @@
         const options = {};
         options.point = true;
 
-        if (D1.components[0].x < D1.components[1].x) {
+        if (D1.components[0].x <= D1.components[1].x) {
             seg1.x1 = D1.components[0].x;
             seg1.y1 = D1.components[0].y;
             seg1.x2 = D1.components[1].x;
@@ -403,7 +402,7 @@
             seg1.y2 = D1.components[0].y;
         }
 
-        if (D2.components[0].x < D2.components[1].x) {
+        if (D2.components[0].x <= D2.components[1].x) {
             seg2.x1 = D2.components[0].x;
             seg2.y1 = D2.components[0].y;
             seg2.x2 = D2.components[1].x;
