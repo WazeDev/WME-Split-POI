@@ -38,12 +38,6 @@
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
     const MINIMUM_AREA = 100.0;
 
-    let LandmarkVectorFeature;
-    let DeleteObjectAction;
-    let DeleteSegmentAction;
-    let UpdateFeatureAddressAction;
-    let MultiAction;
-
     let sdk;
 
     function bootstrap() {
@@ -75,7 +69,7 @@
         // SDK: REMOVE THESE LINES!
         unsafeWindow.sdk = sdk;
         unsafeWindow.turf = turf;
-        unsafeWindow.cutPolygon = cutPolygon;
+        unsafeWindow.cutPolygon3 = cutPolygon;
     }
 
     function startScriptUpdateMonitor() {
@@ -154,13 +148,6 @@
         onSelectionChanged();
     }
 
-    function onScreen(obj) {
-        if (obj.geometry) {
-            return (W.map.getExtent().intersectsBounds(obj.geometry.getBounds()));
-        }
-        return false;
-    }
-
     function venueIsEditabe(venue) {
         // SDK: FR submitted to determine editability of DataModel objects
         venue = W.model.venues.getObjectById(venue.id);
@@ -176,86 +163,6 @@
         return venue;
     }
 
-    function getPoiAndSegIntersectionPoints(poi, seg) {
-        function clearComponent(geometry) {
-            geometry.removeComponent(0);
-            geometry.removeComponent(1);
-        }
-
-        function copyComponent(sourceGeometry, sourceIndex, targetGeometry) {
-            targetGeometry.components[0] = sourceGeometry.components[sourceIndex].clone();
-            targetGeometry.components[1] = sourceGeometry.components[sourceIndex + 1].clone();
-        }
-
-        const poiAttr = poi.attributes;
-        const poiGeo = poiAttr.geometry.clone();
-        const poiLineString = poiGeo.components[0].clone();
-        const segLineString = seg.attributes.geometry.clone();
-
-        const intersectPoint = [];
-        const poiLine = new OpenLayers.Geometry.LinearRing();
-        const segLine = new OpenLayers.Geometry.LinearRing();
-
-        // Calcul des point d'intersection seg // poi
-        for (let n = 0; n < poiLineString.components.length - 1; n++) {
-            copyComponent(poiLineString, n, poiLine);
-            for (let m = 0; m < segLineString.components.length - 1; m++) {
-                copyComponent(segLineString, m, segLine);
-                if (poiLine.intersects(segLine)) {
-                    intersectPoint.push({ index: n, intersect: intersection(poiLine, segLine) });
-                }
-                clearComponent(segLine);
-            }
-            clearComponent(poiLine);
-        }
-
-        return intersectPoint;
-    }
-
-    function createTwoPolygonsFromIntersectionPoints(venue, intersections) {
-        // intégration des points au contour du POI avec memo du nouvel index
-        let i = 1;
-        for (let n = 0; n < intersections.features.length; n++) {
-            const point = intersections.features[n].intersect;
-            const index = intersections.features[n].index + i;
-            venue.geometry.addComponent(point, index);
-            intersections[n].newIndex = index;
-            i++;
-        }
-
-        // création des deux nouvelles géométries
-        const lineString1 = [];
-        const lineString2 = [];
-
-        const index1 = intersections[0].newIndex;
-        const index2 = intersections[1].newIndex;
-
-        for (let n = 0; n < venue.geometry.components.length; n++) {
-            const x = venue.geometry.components[n].x;
-            const y = venue.geometry.components[n].y;
-            const point = new OpenLayers.Geometry.Point(x, y);
-
-            if (n < index1) {
-                lineString1.push(point);
-            } else if (n === index1) {
-                lineString1.push(point);
-                lineString2.push(point.clone());
-            } else if ((index1 < n) && (n < index2)) {
-                lineString2.push(point);
-            } else if (n === index2) {
-                lineString1.push(point);
-                lineString2.push(point.clone());
-            } else if (index2 < n) {
-                lineString1.push(point);
-            }
-        }
-
-        return [
-            new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString1)),
-            new OpenLayers.Geometry.Polygon(new OpenLayers.Geometry.LinearRing(lineString2))
-        ];
-    }
-
     function cloneAttribute(poi, attrName, newAttributesObject) {
         if (poi.attributes.hasOwnProperty(attrName)) {
             let value = poi.attributes[attrName];
@@ -267,52 +174,56 @@
         }
     }
 
-    function addClonePoiAction(poi, newGeometry, nameSuffixIndex, actions) {
-        const clonePoi = new LandmarkVectorFeature({ geoJSONGeometry: W.userscripts.toGeoJSONGeometry(newGeometry) });
-        [
-            'aliases',
-            'categories',
-            'description',
-            'entryExitPoints',
-            'externalProviderIDs',
-            'houseNumber',
-            'lockRank',
-            'name',
-            'openingHours',
-            'phone',
-            'services',
-            'streetID',
-            'url'
-        ].forEach(attrName => cloneAttribute(poi, attrName, clonePoi.attributes));
-        if (clonePoi.attributes.name) clonePoi.attributes.name += ` (copy ${nameSuffixIndex})`; // IMPORTANT! Won't save for some reason without changing the names (at least for PLAs).
-        if (poi.attributes.categoryAttributes.PARKING_LOT) {
-            clonePoi.attributes.categoryAttributes.PARKING_LOT = JSON.parse(JSON.stringify(poi.attributes.categoryAttributes.PARKING_LOT));
-        }
+    function cloneVenue(venue, newGeometry, nameSuffixIndex, actions) {
+        sdk.DataModel.Venues.addVenue({
+            category: 'PARK',
+            geometry: newGeometry
+        });
+        // const clonePoi = new LandmarkVectorFeature({ geoJSONGeometry: W.userscripts.toGeoJSONGeometry(newGeometry) });
+        // [
+        //     'aliases',
+        //     'categories',
+        //     'description',
+        //     'entryExitPoints',
+        //     'externalProviderIDs',
+        //     'houseNumber',
+        //     'lockRank',
+        //     'name',
+        //     'openingHours',
+        //     'phone',
+        //     'services',
+        //     'streetID',
+        //     'url'
+        // ].forEach(attrName => cloneAttribute(poi, attrName, clonePoi.attributes));
+        // if (clonePoi.attributes.name) clonePoi.attributes.name += ` (copy ${nameSuffixIndex})`; // IMPORTANT! Won't save for some reason without changing the names (at least for PLAs).
+        // if (poi.attributes.categoryAttributes.PARKING_LOT) {
+        //     clonePoi.attributes.categoryAttributes.PARKING_LOT = JSON.parse(JSON.stringify(poi.attributes.categoryAttributes.PARKING_LOT));
+        // }
 
-        const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
-        actions.push(new WazeActionAddLandmark(clonePoi));
+        // const WazeActionAddLandmark = require('Waze/Action/AddLandmark');
+        // actions.push(new WazeActionAddLandmark(clonePoi));
 
-        const street = W.model.streets.getObjectById(poi.attributes.streetID);
-        const streetName = street.attributes.name;
-        const cityID = street.attributes.cityID;
-        const city = W.model.cities.getObjectById(cityID);
-        const stateID = city.attributes.stateID;
-        const countryID = city.attributes.countryID;
-        const houseNumber = poi.attributes.houseNumber;
-        if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
-            const newAtts = {
-                emptyStreet: street.attributes.isEmpty, // TODO: fix this
-                stateID,
-                countryID,
-                cityName: city.attributes.name,
-                houseNumber,
-                streetName,
-                emptyCity: city.attributes.isEmpty // TODO: fix this
-            };
-            const updateAddressAction = new UpdateFeatureAddressAction(clonePoi, newAtts);
-            updateAddressAction.options.updateHouseNumber = true;
-            actions.push(updateAddressAction);
-        }
+        // const street = W.model.streets.getObjectById(poi.attributes.streetID);
+        // const streetName = street.attributes.name;
+        // const cityID = street.attributes.cityID;
+        // const city = W.model.cities.getObjectById(cityID);
+        // const stateID = city.attributes.stateID;
+        // const countryID = city.attributes.countryID;
+        // const houseNumber = poi.attributes.houseNumber;
+        // if (!street.attributes.isEmpty || !city.attributes.isEmpty) { // nok
+        //     const newAtts = {
+        //         emptyStreet: street.attributes.isEmpty, // TODO: fix this
+        //         stateID,
+        //         countryID,
+        //         cityName: city.attributes.name,
+        //         houseNumber,
+        //         streetName,
+        //         emptyCity: city.attributes.isEmpty // TODO: fix this
+        //     };
+        //     const updateAddressAction = new UpdateFeatureAddressAction(clonePoi, newAtts);
+        //     updateAddressAction.options.updateHouseNumber = true;
+        //     actions.push(updateAddressAction);
+        // }
     }
 
     function confirmBeforeSplitting(poi) {
@@ -341,12 +252,28 @@
         });
     }
 
-    function onDrawLineFinished(cutLine, venue) {
-        const intersections = turf.lineIntersect(venue.geometry, cutLine);
+    function onDrawLineFinished(line, venue) {
+        const intersections = turf.lineIntersect(venue.geometry, line);
         unsafeWindow.intersections = intersections;
-        unsafeWindow.line = cutLine;
+        unsafeWindow.line = line;
         unsafeWindow.poly = venue.geometry;
         console.log(intersections.features.length === 2);
+        const poly = venue.geometry;
+        const newPolygons = [];
+        const cutResults1 = cutPolygon(poly, line, 1);
+        if (cutResults1) {
+            newPolygons.push(...cutResults1);
+        }
+        const cutResults2 = cutPolygon(poly, line, -1);
+        if (cutResults2) {
+            newPolygons.push(...cutResults2);
+        }
+
+        newPolygons.forEach(polygon => {
+            cloneVenue(venue, polygon.geometry);
+        });
+
+        sdk.DataModel.Venues.deleteVenue({ venueId: venue.id });
         // const poly1 = [];
         // const poly2 = [];
         // for (let i = 0; i < venue.geometry.coordinates.length - 1; i++) {
@@ -371,114 +298,84 @@
 
         sdk.Map.drawLine().then(line => {
             onDrawLineFinished(line, venue);
-            const bbox = [0, 0, 10, 10];
 
-            const poly = turf.bboxPolygon(bbox);
-            console.log(poly);
+            // if (seg.geometry.components.some(pt => venue.geometry.containsPoint(pt))) {
+            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The splitting road segment must be straight (no geometry handles within the POI).');
+            //     return;
+            // }
+
+            // const intersectPoints = getPoiAndSegIntersectionPoints(venue, seg);
+            // if (intersectPoints.length !== 2) {
+            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The temporary road segment must intersect the area place boundary at two points.');
+            //     return;
+            // }
+
+            // const newPolygons = createTwoPolygonsFromIntersectPoints(venue, intersectPoints);
+            // if (newPolygons[0].getArea() < MINIMUM_AREA || newPolygons[1].getArea() < MINIMUM_AREA) {
+            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
+            //     return;
+            // }
+
+            // const confirm = await confirmBeforeSplitting(venue);
+            // if (confirm) {
+            //     const actions = [];
+            //     addClonePoiAction(venue, newPolygons[0], 1, actions);
+            //     addClonePoiAction(venue, newPolygons[1], 2, actions);
+            //     actions.push(new DeleteObjectAction(venue, null));
+            //     actions.push(new DeleteSegmentAction(seg));
+            //     const multiaction = new MultiAction(actions, { description: 'Split POI' });
+            //     W.model.actionManager.add(multiaction);
+            // }
         }).catch(ex => {
             if (ex instanceof sdk.Errors.InvalidStateError) {
                 // log, but ignore it
                 console.log(ex);
+            } else {
+                console.error(ex);
             }
         });
-
-        // const seg = getNewestUnconnectedOnScreenSegment();
-        // if (!seg) {
-        //     WazeWrap.Alerts.error(SCRIPT_NAME, 'Create a temporary unconnected road segment through the area place first.');
-        //     return;
-        // }
-
-        // if (seg.geometry.components.some(pt => venue.geometry.containsPoint(pt))) {
-        //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The splitting road segment must be straight (no geometry handles within the POI).');
-        //     return;
-        // }
-
-        // const intersectPoints = getPoiAndSegIntersectionPoints(venue, seg);
-        // if (intersectPoints.length !== 2) {
-        //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The temporary road segment must intersect the area place boundary at two points.');
-        //     return;
-        // }
-
-        // const newPolygons = createTwoPolygonsFromIntersectPoints(venue, intersectPoints);
-        // if (newPolygons[0].getArea() < MINIMUM_AREA || newPolygons[1].getArea() < MINIMUM_AREA) {
-        //     WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
-        //     return;
-        // }
-
-        // const confirm = await confirmBeforeSplitting(venue);
-        // if (confirm) {
-        //     const actions = [];
-        //     addClonePoiAction(venue, newPolygons[0], 1, actions);
-        //     addClonePoiAction(venue, newPolygons[1], 2, actions);
-        //     actions.push(new DeleteObjectAction(venue, null));
-        //     actions.push(new DeleteSegmentAction(seg));
-        //     const multiaction = new MultiAction(actions, { description: 'Split POI' });
-        //     W.model.actionManager.add(multiaction);
-        // }
     }
 
-    function cutPolygon(polygon, line) {
-        if ((polygon.type !== 'Polygon') || (line.type !== 'LineString')) return null;
+    function cutPolygon(polygon, cutLine, direction) {
+        let j;
+        const polyCoords = [];
+        const cutPolyGeoms = [];
 
-        const intersectPoints = turf.lineIntersect(polygon, line);
+        if ((polygon.type !== 'Polygon') || (cutLine.type !== 'LineString')) return null;
+
+        const intersectPoints = turf.lineIntersect(polygon, cutLine);
         const nPoints = intersectPoints.features.length;
         if ((nPoints === 0) || ((nPoints % 2) !== 0)) return null;
 
-        return [...cutPolygon2(polygon, line, 1), ...cutPolygon2(polygon, line, -1)];
-    }
+        const offsetLine = turf.lineOffset(cutLine, (0.01 * direction), { units: 'kilometers' });
 
-    function cutPolygon2(polygon, line, direction) {
-        const polyCoords = [];
-        const offsetLineCoords = turf.lineOffset(line, (0.01 * direction), { units: 'kilometers' }).geometry.coordinates;
-        polyCoords.push(...line.coordinates, ...offsetLineCoords, line.coordinates[0]);
-
+        for (j = 0; j < cutLine.coordinates.length; j++) {
+            polyCoords.push(cutLine.coordinates[j]);
+        }
+        for (j = (offsetLine.geometry.coordinates.length - 1); j >= 0; j--) {
+            polyCoords.push(offsetLine.geometry.coordinates[j]);
+        }
+        polyCoords.push(cutLine.coordinates[0]);
         const thickLineString = turf.lineString(polyCoords);
         const thickLinePolygon = turf.lineToPolygon(thickLineString);
+
         polygon = turf.feature(polygon);
         const clipped = turf.difference(turf.featureCollection([polygon, thickLinePolygon]));
-        const cutPolyGeoms = [];
-        for (let i = 0; i < clipped.geometry.coordinates.length; i++) {
-            const polyg = turf.polygon(clipped.geometry.coordinates[i]);
-            const overlap = turf.lineOverlap(polyg, line, { tolerance: 0.005 });
+        for (j = 0; j < clipped.geometry.coordinates.length; j++) {
+            const polyg = turf.polygon(clipped.geometry.coordinates[j]);
+            const overlap = turf.lineOverlap(polyg, cutLine, { tolerance: 0.005 });
             if (overlap.features.length > 0) {
                 cutPolyGeoms.push(polyg.geometry.coordinates);
             }
         }
-        return cutPolyGeoms.map(coords => turf.polygon(coords));
-    }
 
-    function intersection(D1, D2) {
-        // let a, b, c, d, x, y;
-        // const seg = {}; // {x1, y1, x2, y2};
-        const seg1 = {}; // {x1, y1, x2, y2};
-        const seg2 = {}; // {x1, y1, x2, y2};
-        const options = {};
-        options.point = true;
-
-        if (D1.components[0].x <= D1.components[1].x) {
-            seg1.x1 = D1.components[0].x;
-            seg1.y1 = D1.components[0].y;
-            seg1.x2 = D1.components[1].x;
-            seg1.y2 = D1.components[1].y;
-        } else if (D1.components[0].x > D1.components[1].x) {
-            seg1.x1 = D1.components[1].x;
-            seg1.y1 = D1.components[1].y;
-            seg1.x2 = D1.components[0].x;
-            seg1.y2 = D1.components[0].y;
+        let result = null;
+        if (cutPolyGeoms.length === 1) {
+            result = [turf.polygon(cutPolyGeoms[0])];
+        } else if (cutPolyGeoms.length > 1) {
+            result = cutPolyGeoms.map(geometry => turf.polygon(geometry));
         }
-
-        if (D2.components[0].x <= D2.components[1].x) {
-            seg2.x1 = D2.components[0].x;
-            seg2.y1 = D2.components[0].y;
-            seg2.x2 = D2.components[1].x;
-            seg2.y2 = D2.components[1].y;
-        } else if (D2.components[0].x > D2.components[1].x) {
-            seg2.x1 = D2.components[1].x;
-            seg2.y1 = D2.components[1].y;
-            seg2.x2 = D2.components[0].x;
-            seg2.y2 = D2.components[0].y;
-        }
-        return OpenLayers.Geometry.segmentsIntersect(seg1, seg2, options);
+        return result;
     }
 
     bootstrap();
