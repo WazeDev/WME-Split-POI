@@ -36,7 +36,10 @@
     const SCRIPT_VERSION = GM_info.script.version;
     const SCRIPT_NAME = GM_info.script.name;
     const DOWNLOAD_URL = 'https://greasyfork.org/scripts/13008-wme-split-poi/code/WME%20Split%20POI.user.js';
-    const MINIMUM_AREA = 100.0;
+    const MINIMUM_AREA = 500.0;
+
+    let UpdateFeatureAddress;
+    let MultiAction;
 
     let sdk;
 
@@ -138,10 +141,7 @@
     }
 
     function initializeWazeObjects() {
-        DeleteObjectAction = require('Waze/Action/DeleteObject');
-        DeleteSegmentAction = require('Waze/Action/DeleteSegment');
-        LandmarkVectorFeature = require('Waze/Feature/Vector/Landmark');
-        UpdateFeatureAddressAction = require('Waze/Action/UpdateFeatureAddress');
+        UpdateFeatureAddress = require('Waze/Action/UpdateFeatureAddress');
         MultiAction = require('Waze/Action/MultiAction');
         document.addEventListener('wme-selection-changed', () => { onSelectionChanged(); });
         // call OnSelectionChanged once to catch selected venue in PL
@@ -163,20 +163,21 @@
         return venue;
     }
 
-    function cloneAttribute(poi, attrName, newAttributesObject) {
-        if (poi.attributes.hasOwnProperty(attrName)) {
-            let value = poi.attributes[attrName];
+    function cloneAttribute(venue, attrName, newAttributesObject) {
+        if (venue.attributes.hasOwnProperty(attrName)) {
+            let value = venue.attributes[attrName];
 
             if (Array.isArray(value)) {
                 value = value.slice(0); // copy array
             }
-            newAttributesObject[attrName] = poi.attributes[attrName];
+            newAttributesObject[attrName] = venue.attributes[attrName];
         }
     }
 
     function cloneVenue(venue, newGeometry, nameSuffixIndex, actions) {
-        sdk.DataModel.Venues.addVenue({
-            category: 'PARK',
+        const cloneId = sdk.DataModel.Venues.addVenue({
+            // SDK: Update this if/when more attributes are available.
+            category: 'OTHER',
             geometry: newGeometry
         });
         // const clonePoi = new LandmarkVectorFeature({ geoJSONGeometry: W.userscripts.toGeoJSONGeometry(newGeometry) });
@@ -226,10 +227,11 @@
         // }
     }
 
-    function confirmBeforeSplitting(poi) {
-        const entryExitPointsLen = poi.attributes.entryExitPoints?.length;
-        const imagesLen = poi.attributes.images?.length;
-        const extProvidersLen = poi.attributes.externalProviderIDs?.length;
+    function confirmBeforeSplitting(venue) {
+        // SDK: FR submitted to add venue attribues
+        const entryExitPointsLen = venue.attributes.entryExitPoints?.length;
+        const imagesLen = venue.attributes.images?.length;
+        const extProvidersLen = venue.attributes.externalProviderIDs?.length;
         let warningText = 'WARNING: The original place will be deleted!';
 
         if (imagesLen) {
@@ -254,34 +256,58 @@
 
     function onDrawLineFinished(line, venue) {
         const intersections = turf.lineIntersect(venue.geometry, line);
+        if (intersections.features.length === 0) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'The cut line must intersect the place\'s geometry.');
+            return;
+        }
+
+        if (intersections.features.length % 2) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'The cut line cannot begin or end inside the place\'s geometry and it cannot cross itself.');
+            return;
+        }
+
+        // const newPolygons = createTwoPolygonsFromIntersectPoints(venue, intersectPoints);
+        // if (newPolygons[0].getArea() < MINIMUM_AREA || newPolygons[1].getArea() < MINIMUM_AREA) {
+        //     WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
+        //     return;
+        // }
         unsafeWindow.intersections = intersections;
         unsafeWindow.line = line;
         unsafeWindow.poly = venue.geometry;
         console.log(intersections.features.length === 2);
-        const poly = venue.geometry;
+        const venuePolygon = venue.geometry;
         const newPolygons = [];
-        const cutResults1 = cutPolygon(poly, line, 1);
+        const cutResults1 = cutPolygon(venuePolygon, line, 1);
         if (cutResults1) {
             newPolygons.push(...cutResults1);
         }
-        const cutResults2 = cutPolygon(poly, line, -1);
+        const cutResults2 = cutPolygon(venuePolygon, line, -1);
         if (cutResults2) {
             newPolygons.push(...cutResults2);
         }
 
+        if (newPolygons.some(poly => { console.log(turf.area(poly)); return turf.area(poly) < MINIMUM_AREA; })) {
+            WazeWrap.Alerts.error(SCRIPT_NAME, 'At least one of the new polygons would be too small to appear in the app.');
+            return;
+        }
+
+        let largest;
         newPolygons.forEach(polygon => {
-            cloneVenue(venue, polygon.geometry);
+            const area = turf.area(polygon);
+            if (!largest || area > largest.area) {
+                largest = { polygon, area };
+            }
         });
 
-        sdk.DataModel.Venues.deleteVenue({ venueId: venue.id });
-        // const poly1 = [];
-        // const poly2 = [];
-        // for (let i = 0; i < venue.geometry.coordinates.length - 1; i++) {
-        //     const coord1 = venue.geometry.coordinates[i];
-        //     const coord2 = venue.geometry.coordinates[i + 1];
-        //     const line = turf.lineString([coord1, coord2]);
-        //     if (turf.pointOnLine())
-        // }
+        newPolygons.forEach(polygon => {
+            if (polygon === largest.polygon) {
+                sdk.DataModel.Venues.updateVenue({ venueId: venue.id, geometry: polygon.geometry });
+            } else {
+                cloneVenue(venue, polygon.geometry);
+            }
+        });
+
+        //sdk.DataModel.Venues.deleteVenue({ venueId: venue.id });
     }
 
     function onSplitPoiButtonClick() {
@@ -299,29 +325,12 @@
         sdk.Map.drawLine().then(line => {
             onDrawLineFinished(line, venue);
 
-            // if (seg.geometry.components.some(pt => venue.geometry.containsPoint(pt))) {
-            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The splitting road segment must be straight (no geometry handles within the POI).');
-            //     return;
-            // }
-
-            // const intersectPoints = getPoiAndSegIntersectionPoints(venue, seg);
-            // if (intersectPoints.length !== 2) {
-            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'The temporary road segment must intersect the area place boundary at two points.');
-            //     return;
-            // }
-
-            // const newPolygons = createTwoPolygonsFromIntersectPoints(venue, intersectPoints);
-            // if (newPolygons[0].getArea() < MINIMUM_AREA || newPolygons[1].getArea() < MINIMUM_AREA) {
-            //     WazeWrap.Alerts.error(SCRIPT_NAME, 'New area place would be too small. Move the temporary road segment.');
-            //     return;
-            // }
-
             // const confirm = await confirmBeforeSplitting(venue);
             // if (confirm) {
             //     const actions = [];
             //     addClonePoiAction(venue, newPolygons[0], 1, actions);
             //     addClonePoiAction(venue, newPolygons[1], 2, actions);
-            //     actions.push(new DeleteObjectAction(venue, null));
+
             //     actions.push(new DeleteSegmentAction(seg));
             //     const multiaction = new MultiAction(actions, { description: 'Split POI' });
             //     W.model.actionManager.add(multiaction);
