@@ -113,11 +113,9 @@
             if (selectedObject.attributes.categories.some(cat => ['GAS_STATION', 'CHARGING_STATION'].includes(cat))) return;
 
             if (selectedObject.type === 'venue' && !$('#split-poi-button').length) {
-                let addAfter = true;
                 let $btnHandle = $('.geometry-type-control-area')[0];
                 if (!$btnHandle) {
                     $btnHandle = $('.external-providers-control')[0];
-                    addAfter = false;
                 }
                 const WMESP_Controle = document.createElement('wz-button');
                 WMESP_Controle.color = 'secondary';
@@ -125,11 +123,9 @@
                 WMESP_Controle.id = 'split-poi-button';
                 WMESP_Controle.className = 'geometry-type-control-button geometry-type-control-point';
                 WMESP_Controle.innerHTML = '<i class="fa fa-cut" style="font-size:24px;" title="Split POI"></i>';
-                if (addAfter) {
-                    $btnHandle.after(WMESP_Controle);
-                } else {
-                    $btnHandle.before(WMESP_Controle);
-                }
+
+                $btnHandle.after(WMESP_Controle);
+
                 WMESP_Controle.onclick = onSplitPoiButtonClick;
             }
         } catch (ex) {
